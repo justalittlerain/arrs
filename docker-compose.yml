@@ -1,0 +1,165 @@
+version: "3.7"
+services:
+    ###### ----- VPN ------ ######
+    #### Using Proston VPN ######
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    # line above must be uncommented to allow external containers to connect.
+    cap_add:
+    - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 8888:8888/tcp # HTTP proxy
+      - 8388:8388/tcp # Shadowsocks
+      - 8388:8388/udp # Shadowsocks
+      - 9696:9696 # prowlarr
+      - 8080:8080 # sabnzbd
+    volumes:
+      - /gluetun:/gluetun
+    environment:
+      # See https://github.com/qdm12/gluetun-wiki/tree/main/setup#setup
+      - VPN_SERVICE_PROVIDER=protonvpn
+      # not the user and pass for the app, have to login and go to the api page to get these
+      - OPENVPN_USER=
+      - OPENVPN_PASSWORD=
+      - SERVER_COUNTRIES=Netherlands
+      # Wireguard:
+      # - WIREGUARD_PRIVATE_KEY=
+      # - WIREGUARD_ADDRESSES=
+      # Timezone for accurate log times
+      - TZ=America/New_York
+      - FIREWALL_OUTBOUND_SUBNETS=192.168.50.0/24
+      - SHADOWSOCKS=on
+      - SHADOWSOCKS_PASSWORD="password"
+      - SHADOWSOCKS_CIPHER="chacha20-ietf-poly1305"
+
+    restart: unless-stopped
+
+
+  ###### --- Downloader ---- #####
+  #SABNZBD -> NZB downloader
+  sabnzbd:
+    image: linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    environment:
+      - PUID=1000
+      - GUID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./sabnzbd/config:/config
+      - ./data/Downloads:/data/Downloads  #media location only needs to see downloads folder
+    network_mode:
+      "service:gluetun"
+    restart: unless-stopped
+    
+
+  ###### ----- Arrs ----- ######            
+  #Overseer allows for media selection
+  overseerr:
+    image: sctx/overseerr:latest
+    container_name: overseerr
+    environment: 
+      - LOG_LEVEL=info
+      - TZ=Europe/Paris
+    ports:
+      - 5055:5055
+    volumes: 
+      - ./overseerr/app/config:/app/config
+    networks:
+      - arr-stack
+    restart: unless-stopped
+
+  #Sonarr - TV SHOWS
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - DOCKER_MODS=ghcr.io/gilbn/theme.park:sonarr
+      - TP_THEME=organizr
+    volumes:
+      - ./sonarr/data:/config
+      - ./data:/data     #media location                                          
+    ports:
+      - 8989:8989
+    networks:
+      - arr-stack
+    restart: unless-stopped
+
+  #Bazarr - subtitles
+  bazarr:
+    image: linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./bazarr/data/config:/config
+      - ./data:/data        # media location
+    ports:
+      - 6767:6767
+    networks:
+      - arr-stack
+    restart: unless-stopped
+
+  #Readarr -> Books
+  readarr:
+    image:  linuxserver/readarr:nightly
+    container_name: readarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./readarr/data:/config
+      - ./data:/data        # media location
+    ports:
+      - 8788:8787
+    networks:
+      - arr-stack
+    restart: unless-stopped
+
+  #Radarr -> Movies
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./radarr/data:/config
+      - ./data:/data     # media location
+    ports:
+      - 7878:7878
+    networks:
+      - arr-stack
+    restart: unless-stopped
+
+  #Prowlarr - indexer  
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+        - PUID=1000
+        - PGID=1000
+        - TZ=America/New_York
+    volumes:
+        - ./prowlarr/data:/config
+    # network_mode: "host"
+    network_mode:
+      "service:gluetun"
+    #ports:
+    #  - 9696:9696
+    restart: unless-stopped
+  
+
+networks:
+  arr-stack:
+      external: true
+      driver: bridge
